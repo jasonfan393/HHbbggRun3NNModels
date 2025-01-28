@@ -1,0 +1,22 @@
+{
+    "input_variables" : [
+        "nonRes_corr_MET_SumET_over_mjj",
+        "nonRes_corr_MET_pt_over_mjj",
+        "nonRes_corr_MET_phi",
+        "fixedGridRhoAll",
+        "nonRes_lead_bjet_PNetCorr_pt_over_mjj",
+        "nonRes_lead_bjet_PNetCorr_mass_over_mjj",
+        "nonRes_lead_bjet_eta_sign",
+        "nonRes_lead_bjet_phi",
+        "nonRes_lead_bjet_btagPNetB",
+        "nonRes_lead_bjet_PNetRegPtRawRes",
+        "nonRes_sublead_bjet_pt_over_mjj",
+        "nonRes_sublead_bjet_mass_over_mjj",
+        "nonRes_sublead_bjet_eta_sign",
+        "nonRes_sublead_bjet_phi",
+        "nonRes_sublead_bjet_btagPNetB",
+        "nonRes_sublead_bjet_PNetRegPtRawRes",
+        "projectphi2M",
+        "projectphi1M"],
+    "target" : [ "Mjj_Corr_Ratio"]
+}
