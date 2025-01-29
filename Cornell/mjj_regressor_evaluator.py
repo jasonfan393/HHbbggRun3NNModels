@@ -21,7 +21,7 @@ parser = argparse.ArgumentParser(
     prog='ProgramName', description='placeholder', epilog='placeholder')
 parser.add_argument('--vars', default='configs/variables_Cornell_mjj.json')
 parser.add_argument('--output_location', default='mjj_regressor_output')
-parser.add_argument('--attach_inputs', default = True)
+parser.add_argument('--attach_inputs', default = False)
 args = parser.parse_args()
 output = args.output_location
 if not os.path.exists(output):
@@ -50,9 +50,6 @@ model = load_model("Mjj_regressor_model")
 # main evaluator loop
 
 for file_path in file_paths:
-    if "HH" not in file_path:
-        continue #FIXME remov
-    print("processing file: " + file_path)
 
     # load parquet with all variables
     df_all = utils.load_parquet_file(file_path, loadAll=True)
