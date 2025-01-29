@@ -22,6 +22,7 @@ parser = argparse.ArgumentParser(
 parser.add_argument('--vars', default='configs/variables_Cornell_mjj.json')
 parser.add_argument('--output_location', default='mjj_regressor_output')
 parser.add_argument('--attach_inputs', default = False)
+parser.add_argument('--attach_pNet', default = False)
 args = parser.parse_args()
 output = args.output_location
 if not os.path.exists(output):
@@ -55,14 +56,17 @@ for file_path in file_paths:
     df_all = utils.load_parquet_file(file_path, loadAll=True)
 
     #add PNET variables (unnecessary and to be removed in future)
-    df_all = utils.add_PNetCorrections(df_all)
+    df_PNet = utils.add_PNetCorrections(df_all)
+    if args.attach_PNet:
+        df_all = df_PNet
 
-    df_input, extravars = utils.mjj_input_df(df_all, input_vars)
+    df_input, extravars = utils.mjj_input_df(df_PNet, input_vars)
+
     if args.attach_inputs:
         df_all = pd.concat([df_all,extravars],axis=1)
 
-    df_all["mjj_regressed"] = model.predict(df_input)
-
+    df_all["mjj_regressor_correction"] = model.predict(df_input)
+    df_all["mjj_regressor_correction"] = (df_all["mjj_regressor_correction"]*df_PNet["nonRes_dijet_corr_mass"]) + df_PNet["nonRes_dijet_corr_mass"]
     destination_path = output + file_path.replace(preamble, "")
     destination_dir = destination_path.replace(
         "NOTAG_merged.parquet", "")  # FIXME this is a hack
