@@ -1,9 +1,9 @@
 {
     "input_variables" : [
-        "nonRes_corr_MET_SumET_over_mjj",
         "nonRes_corr_MET_pt_over_mjj",
-        "nonRes_corr_MET_phi",
+        "nonRes_corr_MET_SumET_over_mjj",
         "fixedGridRhoAll",
+        "nonRes_corr_MET_phi",
         "nonRes_lead_bjet_PNetCorr_pt_over_mjj",
         "nonRes_lead_bjet_PNetCorr_mass_over_mjj",
         "nonRes_lead_bjet_eta_sign",
