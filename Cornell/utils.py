@@ -29,14 +29,14 @@ def add_PNetCorrections(df):
 
     jet1 = vector.array({
         "pt": PNetCorr_lead_bjet_pt,
-        "phi": df["nonRes_sublead_bjet_phi"],
-        "eta": df["nonRes_sublead_bjet_eta"],
+        "phi": df["nonRes_lead_bjet_phi"],
+        "eta": df["nonRes_lead_bjet_eta"],
         "mass": PNetCorr_lead_bjet_mass
     })
     jet2 = vector.array({
         "pt": PNetCorr_sublead_bjet_pt,
-        "phi": df["nonRes_lead_bjet_phi"],
-        "eta": df["nonRes_lead_bjet_eta"],
+        "phi": df["nonRes_sublead_bjet_phi"],
+        "eta": df["nonRes_sublead_bjet_eta"],
         "mass": PNetCorr_sublead_bjet_mass
     })
     dijet = jet1 + jet2
