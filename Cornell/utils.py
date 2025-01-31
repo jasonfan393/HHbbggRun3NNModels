@@ -14,36 +14,9 @@ def load_parquet_file(file_path, columns=[], loadAll=False):
 
 
 def add_PNetCorrections(df):
-    # function adds PNetCorrections, will not be necessary as this will be added to the main parquets.
-    PNetCorr_lead_bjet_pt = df['nonRes_lead_bjet_pt']*(1-df['nonRes_lead_bjet_rawFactor']) * \
-        df['nonRes_lead_bjet_PNetRegPtRawCorr'] * \
-        df['nonRes_lead_bjet_PNetRegPtRawCorrNeutrino']
-    PNetCorr_sublead_bjet_pt = df['nonRes_sublead_bjet_pt']*(1-df['nonRes_sublead_bjet_rawFactor']) * \
-        df['nonRes_sublead_bjet_PNetRegPtRawCorr'] * \
-        df['nonRes_sublead_bjet_PNetRegPtRawCorrNeutrino']
-    PNetCorr_lead_bjet_mass = df['nonRes_lead_bjet_mass']*(1-df['nonRes_lead_bjet_rawFactor']) * \
-        df['nonRes_lead_bjet_PNetRegPtRawCorr'] * \
-        df['nonRes_lead_bjet_PNetRegPtRawCorrNeutrino']
-    PNetCorr_sublead_bjet_mass = df['nonRes_sublead_bjet_mass']*(
-        1-df['nonRes_sublead_bjet_rawFactor'])*df['nonRes_sublead_bjet_PNetRegPtRawCorr']*df['nonRes_sublead_bjet_PNetRegPtRawCorrNeutrino']
 
-    jet1 = vector.array({
-        "pt": PNetCorr_lead_bjet_pt,
-        "phi": df["nonRes_lead_bjet_phi"],
-        "eta": df["nonRes_lead_bjet_eta"],
-        "mass": PNetCorr_lead_bjet_mass
-    })
-    jet2 = vector.array({
-        "pt": PNetCorr_sublead_bjet_pt,
-        "phi": df["nonRes_sublead_bjet_phi"],
-        "eta": df["nonRes_sublead_bjet_eta"],
-        "mass": PNetCorr_sublead_bjet_mass
-    })
-    dijet = jet1 + jet2
-    PNet_dijet_corr_mass = dijet["mass"]
-
-    lead_delta_pt = PNetCorr_lead_bjet_pt - df['nonRes_lead_bjet_pt']
-    sublead_delta_pt = PNetCorr_sublead_bjet_pt - df['nonRes_sublead_bjet_pt']
+    lead_delta_pt = df['nonRes_lead_bjet_pt_PNet_all'] - df['nonRes_lead_bjet_pt']
+    sublead_delta_pt = df['nonRes_sublead_bjet_pt_PNet_all'] - df['nonRes_sublead_bjet_pt']
 
     lead_delta = vector.array({
         "rho": lead_delta_pt,
@@ -59,22 +32,17 @@ def add_PNetCorrections(df):
     })
     corr_MET = MET_Pt - (lead_delta + sublead_delta)
     # correct sumET
-    lead_delta_Et = np.sqrt(PNetCorr_lead_bjet_pt**2 + PNetCorr_lead_bjet_mass**2) - \
+    lead_delta_Et = np.sqrt(df['nonRes_lead_bjet_pt_PNet_all']**2 + df['nonRes_lead_bjet_mass_PNet_all']**2) - \
         np.sqrt(df['nonRes_lead_bjet_pt']**2 + df['nonRes_lead_bjet_mass']**2)
-    sublead_delta_Et = np.sqrt(PNetCorr_sublead_bjet_pt**2 + PNetCorr_sublead_bjet_mass**2) - \
+    sublead_delta_Et = np.sqrt(df['nonRes_sublead_bjet_pt_PNet_all']**2 + df['nonRes_sublead_bjet_mass_PNet_all']**2) - \
         np.sqrt(df['nonRes_sublead_bjet_pt']**2 +
                 df['nonRes_sublead_bjet_mass']**2)
     corr_MET_sumET = df['puppiMET_sumEt'] - (lead_delta_Et + sublead_delta_Et)
 
     # add columns to df
-    df["nonRes_lead_bjet_PNetCorr_pt"] = PNetCorr_lead_bjet_pt
-    df["nonRes_sublead_bjet_PNetCorr_pt"] = PNetCorr_sublead_bjet_pt
-    df["nonRes_lead_bjet_PNetCorr_mass"] = PNetCorr_lead_bjet_mass
-    df["nonRes_sublead_bjet_PNetCorr_mass"] = PNetCorr_sublead_bjet_mass
     df["nonRes_corr_MET_pt"] = corr_MET["rho"]
     df["nonRes_corr_MET_phi"] = corr_MET["phi"]
     df["nonRes_corr_MET_SumET"] = corr_MET_sumET
-    df["nonRes_dijet_corr_mass"] = PNet_dijet_corr_mass
     return df
 
 
@@ -85,7 +53,7 @@ def calc_var(df_in, input_var):
     elif "over" in input_var:
         if "mjj" in input_var:
             base_var = input_var.replace("_over_mjj", "")
-            return df_in[base_var]/df_in["nonRes_dijet_corr_mass"]
+            return df_in[base_var]/df_in["nonRes_dijet_mass_PNet_all"]
     elif "projectphi" in input_var:
         num = input_var.split("projectphi")[1][0]
         return np.cos(df_in["nonRes_DeltaPhi_j" + str(num) + "MET"])
