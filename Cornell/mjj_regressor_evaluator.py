@@ -1,3 +1,5 @@
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pandas as pd
 import awkward as ak
 # import tensorflow as tf
@@ -22,9 +24,9 @@ parser = argparse.ArgumentParser(
     prog='ProgramName', description='placeholder', epilog='placeholder')
 parser.add_argument('--vars', default='configs/variables_Cornell_mjj.json')
 parser.add_argument('--output_location', default='mjj_regressor_output')
-parser.add_argument('--attach_inputs', default = False, action = 'store_true')
-parser.add_argument('--attach_pNet', default = False, action = 'store_true')
-parser.add_argument('--input_location', default = 'mjj_regressor_input')
+parser.add_argument('--attach_inputs', default=False, action='store_true')
+parser.add_argument('--attach_pNet', default=False, action='store_true')
+parser.add_argument('--input_location', default='mjj_regressor_input')
 
 args = parser.parse_args()
 preamble = args.input_location
@@ -47,7 +49,7 @@ for subdir, dirs, files in os.walk(preamble):
         if ".parquet" not in file:
             continue
         if not "merged" in file:
-            #does not work with merged parquets
+            # does not work with merged parquets
             continue
         file_path = os.path.join(subdir, file)
         file_paths.append(file_path)
@@ -56,8 +58,6 @@ for subdir, dirs, files in os.walk(preamble):
 model = load_model("Mjj_regressor_model")
 
 # main evaluator loop
-import pyarrow.parquet as pq
-import pyarrow as pa
 for file_path in file_paths:
 
     print("Loading file: " + file_path)
@@ -65,14 +65,15 @@ for file_path in file_paths:
     chunknum = 0
     chunk_size = 100000
     pqfile = pq.ParquetFile(file_path)
-    batches = pqfile.iter_batches(batch_size = chunk_size)
+    batches = pqfile.iter_batches(batch_size=chunk_size)
     schema = pq.read_schema(file_path)
     writer = None
 
     destination_path = output + file_path.replace(preamble, "")
     file_name = destination_path.split("/")[-1]
-    destination_dir = destination_path.replace(file_name,"")
-    new_file_name = file_name.split(".")[0] + "_mbb_reg" + "." +  file_name.split(".")[1]
+    destination_dir = destination_path.replace(file_name, "")
+    new_file_name = file_name.split(
+        ".")[0] + "_mbb_reg" + "." + file_name.split(".")[1]
     if not os.path.exists(destination_dir):
         os.makedirs(destination_dir)
     output_file = destination_dir + new_file_name
@@ -82,29 +83,32 @@ for file_path in file_paths:
         df_chunk = chunk.to_pandas()
         print("Processing chunk: " + str(chunknum))
         original_columns = df_chunk.columns
-        #add PNET variables (unnecessary and to be removed in future)
+        # add PNET variables (unnecessary and to be removed in future)
         df_chunk = utils.add_PNetCorrections(df_chunk)
-
 
         df_input, extravars = utils.mjj_input_df(df_chunk, input_vars)
 
         if args.attach_inputs:
-            df_chunk = pd.concat([df_chunk,extravars],axis=1) #attach input variables, only necessary for mbb_regressor studies
+            # attach input variables, only necessary for mbb_regressor studies
+            df_chunk = pd.concat([df_chunk, extravars], axis=1)
         correction_term_pred = model.predict(df_input)
-        if not args.attach_pNet: #attach PNET corrections to parquet, unnecessary in latest parquets
+        if not args.attach_pNet:  # attach PNET corrections to parquet, unnecessary in latest parquets
             df_chunk = df_chunk[original_columns]
         df_chunk["mjj_regressor_correction"] = correction_term_pred
-        df_chunk["mjj_regressed"] = (df_chunk["mjj_regressor_correction"]*df_chunk["nonRes_dijet_mass_PNet_all"]) + df_chunk["nonRes_dijet_mass_PNet_all"]
+        df_chunk["mjj_regressed"] = (df_chunk["mjj_regressor_correction"] *
+                                     df_chunk["nonRes_dijet_mass_PNet_all"]) + df_chunk["nonRes_dijet_mass_PNet_all"]
 
-        #check for placeholder values, and insert in new columns (all new columns require a valid sublead jet)
-        df_is_not_placeholder = df_chunk["nonRes_sublead_bjet_phi"]>-999
+        # check for placeholder values, and insert in new columns (all new columns require a valid sublead jet)
+        df_is_not_placeholder = df_chunk["nonRes_sublead_bjet_phi"] > -999
         for column in df_chunk.columns:
             if column not in original_columns:
-                df_chunk[column] = np.where(df_is_not_placeholder, df_chunk[column], -999)
+                df_chunk[column] = np.where(
+                    df_is_not_placeholder, df_chunk[column], -999)
 
         table = pa.Table.from_pandas(df_chunk)
         if writer is None:
-            schema = schema.append(pa.field('mjj_regressor_correction', pa.float32()))
+            schema = schema.append(
+                pa.field('mjj_regressor_correction', pa.float32()))
             schema = schema.append(pa.field('mjj_regressed', pa.float64()))
             writer = pq.ParquetWriter(output_file, schema)
         table = table.cast(schema)
@@ -113,6 +117,3 @@ for file_path in file_paths:
     if writer:
         writer.close()
         print("output saved in: " + output_file)
-
-
-

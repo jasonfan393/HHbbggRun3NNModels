@@ -15,8 +15,10 @@ def load_parquet_file(file_path, columns=[], loadAll=False):
 
 def add_PNetCorrections(df):
 
-    lead_delta_pt = df['nonRes_lead_bjet_pt_PNet_all'] - df['nonRes_lead_bjet_pt']
-    sublead_delta_pt = df['nonRes_sublead_bjet_pt_PNet_all'] - df['nonRes_sublead_bjet_pt']
+    lead_delta_pt = df['nonRes_lead_bjet_pt_PNet_all'] - \
+        df['nonRes_lead_bjet_pt']
+    sublead_delta_pt = df['nonRes_sublead_bjet_pt_PNet_all'] - \
+        df['nonRes_sublead_bjet_pt']
 
     lead_delta = vector.array({
         "rho": lead_delta_pt,
