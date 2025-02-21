@@ -6,13 +6,13 @@ Set up necessary conda environment with
 conda install -f environment.yml
 conda activate mjj_env
 ```
-#mjj_trainer.py
+## mjj trainer
 Contains a (simple) version of the regressor training. Runs on lxplus, but is slow and typically run on a local system with a decent GPU
 Run with default settings with:
 ```
 python mjj_trainer.py
 ```
-#mjj_regressor_evaluator.py 
+## mjj regressor evaluator 
 takes HiggsDNA parquets (that have PNet info added) and applies extra columns from the regressor. 
 Run with:
 ```
