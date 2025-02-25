@@ -10,15 +10,21 @@ from sklearn.model_selection import train_test_split
 from sklearn import preprocessing
 from matplotlib import pyplot as plt
 import numpy as np
-import datetime
 from tensorflow.keras.optimizers import Adam
 import vector
-from scipy.optimize import leastsq
+from scipy.optimize import curve_fit
 import mplhep as hep
-
+from tensorflow.keras.models import load_model
 import utils
 import argparse
 import json
+
+
+def gauss(x, *p):
+    A, mu, sigma = p
+    return A*np.exp(-(x-mu)**2/(2.*sigma**2))
+
+p0 = [.5, 125, .2]
 
 def build_model(input_shape, learning_rate=0.001, loss = 'mean_squared_error', N = 100, layers = 3):
     normalization_layer = Normalization()
@@ -57,20 +63,134 @@ def build_model(input_shape, learning_rate=0.001, loss = 'mean_squared_error', N
             Dense(1)  # Single output for regression with linear activation
         ])
     optimizer = Adam(learning_rate=learning_rate, clipnorm=1.0)
-    model.compile(optimizer=optimizer, loss=loss, metrics=[loss])  # MSE loss and MAE metric for regression
+    model.compile(optimizer=optimizer, loss=loss, metrics=["mse"])
     return model
 
+def plot_mjj_distr(df, corr_term, save_location, do_fits = True):
+    """
+    plot_mjj_distr plots dijet mass distribution comparison
+    compares raw HiggsDNA output, PNet regressed dijet and mjj regressor output
+
+    :param df: pandas dataframe containing dijet masses
+    :param corr_term: correction term prediction from jj_regressor
+    :param save_location: directory to save plot
+    :param do_fits: bool sets whether or not to attempt to fit dijet masses to gaussians
+    """
+    min_mjj = 70
+    max_mjj = 190
+    num_bins = 100
+    colors=['tab:blue','orange','green']
+    m_vars = ["nonRes_dijet_mass_PNet_all","nonRes_dijet_mass"]
+    df = df[m_vars]
+    hep.style.use("CMS")
+    fig, ax = plt.subplots()
+    hep.cms.label("Preliminary", ax=ax, loc=0)
 
 
+    bins_hist = np.linspace(min_mjj,max_mjj, num = num_bins)
 
+    print(df["nonRes_dijet_mass_PNet_all"].shape)
+    print(corr_term.shape)
+    corr_term = corr_term.flatten()
+    mjj_reg =  (corr_term * df["nonRes_dijet_mass_PNet_all"]) + df["nonRes_dijet_mass_PNet_all"]
+
+    masses_dict = {
+      'HiggsDNA Reco.'       : df["nonRes_dijet_mass"],
+      'PNet Reg.'            : df["nonRes_dijet_mass_PNet_all"],
+      'PNet Reg. + mjj Reg.' : mjj_reg
+    }
+    i = 0
+    for key,distr in masses_dict.items():
+        plt.hist(distr,bins = bins_hist, histtype = 'step', density = True, color = colors[i], label = key)
+        if do_fits:
+            bins = np.linspace(min_mjj,max_mjj,num = 300)
+            hist, bin_edges = np.histogram(distr, density=True,bins = bins)
+            bin_centres = (bin_edges[:-1] + bin_edges[1:])/2
+            mean = np.mean(distr)
+            std = np.std(distr)
+            lower = mean - std
+            upper = mean + std
+            hist_range = hist[(bin_centres<upper) & (bin_centres>lower)]
+            bin_centres_range = bin_centres[(bin_centres<upper) & (bin_centres>lower)]
+            p0 = [.5, mean, std]
+            coeff, var_matrix = curve_fit(gauss, bin_centres_range, hist_range, p0=p0)
+            mu = coeff[1]
+            sig = coeff [2]
+            lower = mu - abs(sig)
+            upper = mu + abs(sig)
+            hist_range = hist[(bin_centres<upper) & (bin_centres>lower)]
+            bin_centres_range = bin_centres[(bin_centres<upper) & (bin_centres>lower)]
+            coeff, var_matrix = curve_fit(gauss, bin_centres_range, hist_range, p0=p0)
+            mu = coeff[1]
+            sig = coeff [2]
+            lower = mu - abs(sig)
+            upper = mu + abs(sig)
+            hist_range = hist[(bin_centres<upper) & (bin_centres>lower)]
+            bin_centres_range = bin_centres[(bin_centres<upper) & (bin_centres>lower)]
+            coeff, var_matrix = curve_fit(gauss, bin_centres_range, hist_range, p0=p0)
+            hist_fit = gauss(bin_centres_range, *coeff)
+            plt.plot(bin_centres_range, hist_fit, color = colors[i], label='$\mu$ = ' + str(coeff[1])[:5] + ", $\sigma$ = " + str(abs(coeff[2]))[:4],linestyle='--')
+            i = i+1
+    plt.legend()
+    plt.xlabel("$M_jj$ (GeV)")
+    plt.xlim(min_mjj,max_mjj)
+    plt.savefig(save_location+"/mjj_distribution.png")
+    plt.clf()
+
+def plot_history(history, loss, save_location):
+    print(history.history.keys())
+    hep.style.use("CMS")
+    fig, ax = plt.subplots()
+    hep.cms.label("Preliminary", ax=ax, loc=0)
+    plt.plot(history.history["loss"], label='Train Loss')
+    plt.plot(history.history['val_loss'], label='Val Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss (Huber)')
+    plt.legend()
+
+    plt.savefig(save_location + "/lossplot.png")
+    plt.clf()
+
+def feature_importance(model, training_vars, X_test, Y_test, metric, save_location):
+
+    Y_pred = model.predict(X_test).flatten()
+    baseline = np.mean((Y_pred - Y_test)**2)
+    importance = []
+    for training_var in training_vars:
+        X_test_copy = np.copy(X_test.values)
+        X_test_copy = X_test_copy.T
+        np.random.shuffle(X_test_copy[training_vars.index(training_var)])
+        X_test_copy = X_test_copy.T
+        new_Y_pred = model.predict(X_test_copy).flatten()
+        new_metric = np.mean((new_Y_pred - Y_test)**2)
+        if (new_metric-baseline)<0:
+            importance.append(0)
+        else:
+            importance.append(new_metric - baseline)
+
+    hep.style.use("CMS")
+    fig, ax = plt.subplots()
+    hep.cms.label("Preliminary", ax=ax, loc=0)
+    y_pos = range(len(training_vars))
+    fig.subplots_adjust(left = 0.2)
+    ax.barh(y_pos, importance)
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(training_vars)
+    ax.yaxis.grid() # horizontal lines
+    ax.xaxis.grid() # vertical lines
+    #plt.title("Feature Importance")
+    plt.xlabel("delta_MSE")
+
+    plt.savefig(save_location + "/feature_importance.png")
+    plt.clf()
 #mjj_trainer processing begins here:
 parser = argparse.ArgumentParser(
-    prog='Mjj Regressor Trainer', description='Script traings mjj regression, produces relevant performance plots')
+    prog='Mjj Regressor Trainer', description='Script trains mjj regression, produces relevant performance plots')
 parser.add_argument('--vars', default='configs/variables_Cornell_mjj.json')
 parser.add_argument('--out_dir', default='mjj_regressor_performance')
 parser.add_argument('--model', default='mjj_regressor_model')
 parser.add_argument('--training_set', default='/afs/cern.ch/user/j/jafan/eosjfan/public/mbbTraining/GluGluToHH_with_full_PNet_info.parquet')
-
+parser.add_argument('--plotsOnly', default = False, action='store_true')
 args = parser.parse_args()
 
 if not os.path.exists(args.out_dir):
@@ -83,24 +203,26 @@ input_vars = data["input_variables"]
 target_var = data["target"]
 allvars = [*input_vars, target_var]
 
-#Open training parquet, apply some quality cuts
+#Open training parquet
 df = utils.load_parquet_file(args.training_set, loadAll = True)
-print("# of events (Pre-cuts): " + str(len(df.index)))
-
-df = df.drop(df[np.abs(df["nonRes_lead_bjet_genFlav"]) != 5].index)
-df = df.drop(df[np.abs(df["nonRes_sublead_bjet_genFlav"]) != 5].index)
-
-print("# of events (Post-cuts): " + str(len(df.index)))
-
 #Create calculated columns not in base parquets
 df = utils.add_PNetCorrections(df)
-df_in, extravars = utils.mjj_input_df(df, allvars)
 
-df_train,df_test = train_test_split(df_in, test_size=0.3)
-X_train = df_train[input_vars]
-X_test = df_test[input_vars]
-y_train = df_train[target_var]
-y_test = df_test[target_var]
+df_train,df_test = train_test_split(df, test_size=0.5)
+print("# of training events (Pre-cuts): " + str(len(df_train.index)))
+
+df_train = df_train.drop(df_train[np.abs(df_train["nonRes_lead_bjet_genFlav"]) != 5].index)
+df_train = df_train.drop(df_train[np.abs(df_train["nonRes_sublead_bjet_genFlav"]) != 5].index)
+
+print("# of training events (Post-cuts): " + str(len(df_train.index)))
+
+df_train_in, extravars = utils.mjj_input_df(df_train, allvars)
+df_test_in, extravars = utils.mjj_input_df(df_test, allvars)
+
+X_train = df_train_in[input_vars]
+X_test = df_test_in[input_vars]
+y_train = df_train_in[target_var]
+y_test = df_test_in[target_var]
 
 print("Training variables:")
 for i in input_vars:
@@ -109,21 +231,30 @@ print('# of variables: ' + str(len(input_vars)))
 
 #TODO port gridsearch into this script, runs very slow on lxplus
 
-#results of most recent grid search:
+#results of a recent grid search #FIXME to import from a config:
 lr = .00001
-epochs = 25
-batchsize = 32
-N = 200
+epochs = 50
+batchsize = 64
+N = 400
 L = 4
-loss = 'mean_squared_error'
-print("Hyperparameters: ")
-print("lr: " + str(lr) + " ep: " + str(epochs) + " ba: " + str(batchsize) + " loss: " + loss + "N: " + str(N) + "L:" + str(L))
-# Initialize the model
-model = build_model(X_train.shape[1], lr, loss, N, L)
+loss = tf.keras.losses.Huber()
 
-# Train the mode - this is very slow on lxplus
-history = model.fit(X_train, y_train, epochs=epochs,batch_size=batchsize, validation_split=0.3)
+if args.plotsOnly:
+    model = load_model(args.model, 
+                   custom_objects={'huber_loss': tf.keras.losses.Huber})
+else:
+    # Initialize the model
+    model = build_model(X_train.shape[1], lr, loss, N, L)
+    # Train the model - this is very slow on lxplus
+    history = model.fit(X_train, y_train, validation_split = 0.2, epochs=epochs,batch_size=batchsize)
+    model.save(args.model)
+    #Plot loss function
+    plot_history(history, 'huber_loss', args.out_dir)
+#Run performance plots, etc
 
-model.save("Mjj_regressor_model")
+mjj_reg_corr_term = model.predict(df_test_in[input_vars])
 
+feature_importance(model, input_vars, X_test, y_test, tf.keras.losses.MeanSquaredError, args.out_dir)
+
+plot_mjj_distr(df_test,mjj_reg_corr_term, args.out_dir)
 

@@ -12,6 +12,10 @@ def load_parquet_file(file_path, columns=[], loadAll=False):
     df = df.fillna(0)
     return df
 
+def deltaPhi(phi1,phi2):
+    phases = phi1 - phi2
+    return (phases + np.pi) % (2 * np.pi) - np.pi
+
 
 def add_PNetCorrections(df):
 
@@ -41,11 +45,17 @@ def add_PNetCorrections(df):
                 df['nonRes_sublead_bjet_mass']**2)
     corr_MET_sumET = df['puppiMET_sumEt'] - (lead_delta_Et + sublead_delta_Et)
 
+    # recalculate deltaPhi with new MET
+
+    df["deltaPhi_j1MET_corr"] = deltaPhi(df["nonRes_corr_MET_phi"],df["nonRes_lead_bjet_phi"])
+    df["deltaPhi_j2MET_corr"] = deltaPhi(df["nonRes_corr_MET_phi"],df["nonRes_sublead_bjet_phi"])
+
     # add columns to df
     df["nonRes_corr_MET_pt"] = corr_MET["rho"]
     df["nonRes_corr_MET_phi"] = corr_MET["phi"]
     df["nonRes_corr_MET_SumET"] = corr_MET_sumET
     return df
+
 
 
 def calc_var(df_in, input_var):
@@ -58,12 +68,14 @@ def calc_var(df_in, input_var):
             return df_in[base_var]/df_in["nonRes_dijet_mass_PNet_all"]
     elif "projectphi" in input_var:
         num = input_var.split("projectphi")[1][0]
-        return np.cos(df_in["nonRes_DeltaPhi_j" + str(num) + "MET"])
+        return np.cos(df_in["deltaPhi_j" + str(num) + "MET_corr"])
     elif "eta_sign" in input_var:
         base_var = input_var.replace("_sign", "")
         return df_in[base_var] * np.sign(df_in["nonRes_lead_bjet_eta"])
+    elif "Mjj_Corr_Ratio" == input_var:
+        return (df_in["nonRes_gen_dijet_mass_neutrino"]-df_in["nonRes_dijet_mass_PNet_all"])/df_in["nonRes_dijet_mass_PNet_all"]
     else:
-        print("variable not yet supported")
+        print("WARNING: Variable not yet supported")
         return None
 
 
