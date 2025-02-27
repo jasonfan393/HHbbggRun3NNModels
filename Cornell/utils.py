@@ -12,7 +12,8 @@ def load_parquet_file(file_path, columns=[], loadAll=False):
     df = df.fillna(0)
     return df
 
-def deltaPhi(phi1,phi2):
+
+def deltaPhi(phi1, phi2):
     phases = phi1 - phi2
     return (phases + np.pi) % (2 * np.pi) - np.pi
 
@@ -45,17 +46,19 @@ def add_PNetCorrections(df):
                 df['nonRes_sublead_bjet_mass']**2)
     corr_MET_sumET = df['puppiMET_sumEt'] - (lead_delta_Et + sublead_delta_Et)
 
-    # recalculate deltaPhi with new MET
-
-    df["deltaPhi_j1MET_corr"] = deltaPhi(df["nonRes_corr_MET_phi"],df["nonRes_lead_bjet_phi"])
-    df["deltaPhi_j2MET_corr"] = deltaPhi(df["nonRes_corr_MET_phi"],df["nonRes_sublead_bjet_phi"])
-
     # add columns to df
     df["nonRes_corr_MET_pt"] = corr_MET["rho"]
     df["nonRes_corr_MET_phi"] = corr_MET["phi"]
     df["nonRes_corr_MET_SumET"] = corr_MET_sumET
-    return df
 
+    # recalculate deltaPhi with new MET
+
+    df["deltaPhi_j1MET_corr"] = deltaPhi(
+        df["nonRes_corr_MET_phi"], df["nonRes_lead_bjet_phi"])
+    df["deltaPhi_j2MET_corr"] = deltaPhi(
+        df["nonRes_corr_MET_phi"], df["nonRes_sublead_bjet_phi"])
+
+    return df
 
 
 def calc_var(df_in, input_var):

@@ -2,7 +2,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pandas as pd
 import awkward as ak
-# import tensorflow as tf
+import tensorflow as tf
 # from tensorflow.keras.layers.experimental.preprocessing import Normalization
 # from sklearn import preprocessing
 # from tensorflow.keras.optimizers import Adam
@@ -27,6 +27,7 @@ parser.add_argument('--output_location', default='mjj_regressor_output')
 parser.add_argument('--attach_inputs', default=False, action='store_true')
 parser.add_argument('--attach_pNet', default=False, action='store_true')
 parser.add_argument('--input_location', default='mjj_regressor_input')
+parser.add_argument('--model', default='Mjj_regressor_model')
 
 args = parser.parse_args()
 preamble = args.input_location
@@ -55,7 +56,8 @@ for subdir, dirs, files in os.walk(preamble):
         file_paths.append(file_path)
 
 # load your Mjj regressor here
-model = load_model("Mjj_regressor_model")
+model = load_model(args.model, custom_objects={
+                   'huber_loss': tf.keras.losses.Huber})
 
 # main evaluator loop
 for file_path in file_paths:
