@@ -49,9 +49,9 @@ for subdir, dirs, files in os.walk(preamble):
     for file in files:
         if ".parquet" not in file:
             continue
-        if not "merged" in file:
-            # does not work with merged parquets
-            continue
+        # if not "merged" in file:
+        #    # does not work with merged parquets
+        #    continue
         file_path = os.path.join(subdir, file)
         file_paths.append(file_path)
 

@@ -12,7 +12,7 @@ from sklearn.model_selection import train_test_split
 from sklearn import preprocessing
 from matplotlib import pyplot as plt
 import numpy as np
-from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.optimizers import Adam, RMSprop, SGD
 import vector
 from scipy.optimize import curve_fit
 import mplhep as hep
@@ -27,49 +27,112 @@ def gauss(x, *p):
     return A*np.exp(-(x-mu)**2/(2.*sigma**2))
 
 
-p0 = [.5, 125, .2]
+def novosibirsk(x, A, x0, sigma, tau):
+    """
+    Computes the Novosibirsk function.
+
+    Parameters:
+    x     : float or ndarray : Input value(s)
+    A     : float : Amplitude (scales the function)
+    x0    : float : Peak position
+    sigma : float : Width parameter (sigma, must be > 0)
+    tau   : float : Tail parameter (controls asymmetry)
+
+    Returns:
+    float or ndarray : Computed function values
+    """
+    if abs(tau) < 1e-7:  # If tau is very small, function reduces to a Gaussian
+        return A * np.exp(-0.5 * ((x - x0) / sigma) ** 2)
+
+    # Compute Lambda
+    ln4 = np.log(4)
+    lambda_ = np.sinh(tau * np.sqrt(ln4)) / (abs(sigma) * tau * np.sqrt(ln4))
+
+    # Compute the logarithmic term safely
+    arg = 1 + lambda_ * tau * (x - x0)
+    arg = np.clip(arg, 1e-10, None)  # Prevent log of zero/negative values
+    log_term = np.log(arg) / tau
+
+    return A * np.exp(-0.5 * (log_term ** 2))
 
 
-def build_model(input_shape, learning_rate=0.001, loss='mean_squared_error', N=100, layers=3):
+def double_crystal_ball(x, A, mean, sigma, alpha1, n1, alpha2, n2):
+    """
+    Double-sided Crystal Ball function.
+
+    Parameters:
+    x      : float or ndarray : Input value(s)
+    A      : float : Amplitude (scales the function)
+    mean   : float : Peak position
+    sigma  : float : Width parameter
+    alpha1 : float : Left-side transition parameter
+    n1     : float : Left-side power-law exponent
+    alpha2 : float : Right-side transition parameter
+    n2     : float : Right-side power-law exponent
+
+    Returns:
+    float or ndarray : Computed function values
+    """
+
+    abs_alpha1 = abs(alpha1)  # Ensure positive
+    abs_alpha2 = abs(alpha2)
+
+    z = (x - mean) / sigma
+    C1 = (n1 / abs_alpha1) ** n1 * np.exp(-0.5 * abs_alpha1 ** 2)
+    C2 = (n2 / abs_alpha2) ** n2 * np.exp(-0.5 * abs_alpha2 ** 2)
+    D1 = n1 / abs_alpha1 - abs_alpha1
+    D2 = n2 / abs_alpha2 - abs_alpha2
+
+    result = np.where(
+        z < -abs_alpha1,
+        A * C1 * (D1 - z) ** -n1,  # Left tail
+        np.where(
+            z > abs_alpha2,
+            A * C2 * (D2 + z) ** -n2,  # Right tail
+            A * np.exp(-0.5 * z ** 2)  # Gaussian core
+        )
+    )
+
+    return result
+
+
+def build_model(input_shape, X_train, optimizer='adam', N=200, activation='relu', layers=2, dropout=0.1, lr=0.001):
+    loss = tf.keras.losses.Huber()
     normalization_layer = Normalization()
     # Compute the mean and variance of the training data
     normalization_layer.adapt(X_train)
-    if layers == 3:
-        model = Sequential([
-            normalization_layer,
-            Dense(N, activation='relu', input_shape=(input_shape,)),
-            Dropout(0.1),
-            Dense(N/2, activation='relu'),
-            Dropout(0.1),
-            Dense(N/4, activation='relu'),
-            Dropout(0.1),
-            Dense(1)  # Single output for regression with linear activation
-        ])
-    elif layers == 2:
-        model = Sequential([
-            normalization_layer,
-            Dense(N, activation='relu', input_shape=(input_shape,)),
-            Dropout(0.1),
-            Dense(N/2, activation='relu'),
-            Dropout(0.1),
-            Dense(1)  # Single output for regression with linear activation
-        ])
-    elif layers == 4:
-        model = Sequential([
-            normalization_layer,
-            Dense(N, activation='relu', input_shape=(input_shape,)),
-            Dropout(0.1),
-            Dense(N/2, activation='relu'),
-            Dropout(0.1),
-            Dense(N/4, activation='relu'),
-            Dropout(0.1),
-            Dense(N/8, activation='relu'),
-            Dropout(0.1),
-            Dense(1)  # Single output for regression with linear activation
-        ])
-    optimizer = Adam(learning_rate=learning_rate, clipnorm=1.0)
-    model.compile(optimizer=optimizer, loss=loss, metrics=["mse"])
+    model = Sequential()
+    model.add(normalization_layer)
+    model.add(Dense(N, activation=activation, input_shape=(input_shape,)))
+    model.add(Dropout(dropout))
+    for i in range(layers-1):
+        model.add(Dense(N, activation=activation))
+        model.add(Dropout(dropout))
+    model.add(Dense(1))
+    if optimizer == 'adam':
+        opt = Adam(learning_rate=lr)
+    elif optimizer == 'rmsprop':
+        opt = RMSprop(learning_rate=lr)
+    elif optimizer == 'sgd':
+        opt = SGD(learning_rate=lr)
+    model.compile(optimizer=opt, loss=loss, metrics=["mse"])
     return model
+
+
+def plot_input_vars(df, input_vars, save_location):
+
+    hep.style.use("CMS")
+    fig, ax = plt.subplots()
+    hep.cms.label("Preliminary", ax=ax, loc=0)
+
+    if not os.path.exists(save_location + "/input_vars"):
+        os.makedirs(save_location + "/input_vars")
+
+    for input_var in input_vars:
+        plt.hist(df[input_var])
+        plt.xlabel(input_var)
+        plt.savefig(save_location+"/input_vars/" + input_var+".png")
+        plt.clf()
 
 
 def plot_mjj_distr(df, corr_term, save_location, do_fits=True):
@@ -102,7 +165,7 @@ def plot_mjj_distr(df, corr_term, save_location, do_fits=True):
                ) + df["nonRes_dijet_mass_PNet_all"]
 
     masses_dict = {
-        'HiggsDNA Reco.': df["nonRes_dijet_mass"],
+        # 'HiggsDNA Reco.': df["nonRes_dijet_mass"],
         'PNet Reg.': df["nonRes_dijet_mass_PNet_all"],
         'PNet Reg. + mjj Reg.': mjj_reg
     }
@@ -116,34 +179,17 @@ def plot_mjj_distr(df, corr_term, save_location, do_fits=True):
             bin_centres = (bin_edges[:-1] + bin_edges[1:])/2
             mean = np.mean(distr)
             std = np.std(distr)
-            lower = mean - std
-            upper = mean + std
-            hist_range = hist[(bin_centres < upper) & (bin_centres > lower)]
-            bin_centres_range = bin_centres[(
-                bin_centres < upper) & (bin_centres > lower)]
-            p0 = [.5, mean, std]
+            lower = min_mjj
+            upper = max_mjj
+            p0 = [np.max(hist), 100, 15, 1.5, 2, 1.5, 2]
+            bounds = (
+                [0, 80, 1, 0.1, 1, 0.1, 1],  # Lower bounds
+                [np.inf, 120, 30, 10, 10, 10, 10]  # Upper bounds
+            )
             coeff, var_matrix = curve_fit(
-                gauss, bin_centres_range, hist_range, p0=p0)
-            mu = coeff[1]
-            sig = coeff[2]
-            lower = mu - abs(sig)
-            upper = mu + abs(sig)
-            hist_range = hist[(bin_centres < upper) & (bin_centres > lower)]
-            bin_centres_range = bin_centres[(
-                bin_centres < upper) & (bin_centres > lower)]
-            coeff, var_matrix = curve_fit(
-                gauss, bin_centres_range, hist_range, p0=p0)
-            mu = coeff[1]
-            sig = coeff[2]
-            lower = mu - abs(sig)
-            upper = mu + abs(sig)
-            hist_range = hist[(bin_centres < upper) & (bin_centres > lower)]
-            bin_centres_range = bin_centres[(
-                bin_centres < upper) & (bin_centres > lower)]
-            coeff, var_matrix = curve_fit(
-                gauss, bin_centres_range, hist_range, p0=p0)
-            hist_fit = gauss(bin_centres_range, *coeff)
-            plt.plot(bin_centres_range, hist_fit, color=colors[i], label='$\mu$ = ' + str(
+                double_crystal_ball, bin_centres, hist, p0=p0, bounds=bounds)
+            hist_fit = double_crystal_ball(bin_centres, *coeff)
+            plt.plot(bin_centres, hist_fit, color=colors[i], label='$\mu$ = ' + str(
                 coeff[1])[:5] + ", $\sigma$ = " + str(abs(coeff[2]))[:4], linestyle='--')
             i = i+1
     plt.legend()
@@ -220,8 +266,11 @@ parser.add_argument('--model', default='mjj_regressor_model')
 parser.add_argument(
     '--training_set', default='/afs/cern.ch/user/j/jafan/eosjfan/public/mbbTraining/GluGluToHH_with_full_PNet_info.parquet')
 parser.add_argument('--plotsOnly', default=False, action='store_true')
+parser.add_argument('--doGridSearch', default=False, action='store_true')
+parser.add_argument('--hParams', default='configs/hParams.json')
 args = parser.parse_args()
 
+doGridSearch = args.doGridSearch
 if not os.path.exists(args.out_dir):
     os.makedirs(args.out_dir)
 
@@ -250,6 +299,8 @@ print("# of training events (Post-cuts): " + str(len(df_train.index)))
 df_train_in, extravars = utils.mjj_input_df(df_train, allvars)
 df_test_in, extravars = utils.mjj_input_df(df_test, allvars)
 
+plot_input_vars(df_train_in, input_vars, args.out_dir)
+
 X_train = df_train_in[input_vars]
 X_test = df_test_in[input_vars]
 y_train = df_train_in[target_var]
@@ -261,32 +312,89 @@ for i in input_vars:
 print('# of variables: ' + str(len(input_vars)))
 
 # TODO port gridsearch into this script, runs very slow on lxplus
+model = []
 
-# results of a recent grid search #FIXME to import from a config:
-lr = .000005
-epochs = 50
-batchsize = 32
-N = 400
-L = 4
-loss = tf.keras.losses.Huber()
+if doGridSearch:
+    print("Performing randomized search with CV")
+    from scikeras.wrappers import KerasRegressor
+    from sklearn.model_selection import RandomizedSearchCV
+    param_dist = {
+        'optimizer': ['adam', 'rmsprop', 'sgd'],
+        'N': [16, 32, 64, 128, 256],
+        'activation': ['relu', 'tanh'],
+        'layers': [1, 2, 3],
+        'batch_size': [16, 32, 64],
+        'epochs': [20, 50, 100, 200],
+        'dropout': [0.05, 0, 0.1],
+        'lr':  [0.0001, 0.00001, 0.000001]
+    }
+
+    keras_reg = KerasRegressor(
+        build_fn=build_model, input_shape=X_train.shape[1], X_train=X_train, verbose=0)
+
+    keras_reg = KerasRegressor(
+        build_fn=build_model,
+        X_train=X_train,
+        input_shape=X_train.shape[1],  # Fix input shape
+        optimizer='adam',  # Default optimizer
+        N=64,  # Default N
+        activation='relu',
+        layers=2,
+        lr=0.001,
+        dropout=0.2,
+        verbose=0
+    )
+    random_search = RandomizedSearchCV(
+        estimator=keras_reg,
+        param_distributions=param_dist,
+        n_iter=10,
+        cv=3,
+        verbose=1,
+        n_jobs=-1
+    )
+
+    random_search.fit(X_train, y_train)
+
+    print("Best Parameters:", random_search.best_params_)
+    print("Best Score:", random_search.best_score_)
+
+    best_params = random_search.best_params_
+
+    with open(args.hParams, 'w') as f:
+        json.dump(best_params, f)
 
 if args.plotsOnly:
     model = load_model(args.model,
                        custom_objects={'huber_loss': tf.keras.losses.Huber})
 else:
+    if not args.doGridSearch:
+        with open(args.hParams, 'r') as f:
+            best_params = json.load(f)
+
+    loss = tf.keras.losses.Huber()
     # Initialize the model
-    model = build_model(X_train.shape[1], lr, loss, N, L)
+    model = build_model(
+        X_train.shape[1], X_train,
+        optimizer=best_params['optimizer'],
+        N=best_params['N'],
+        activation=best_params['activation'],
+        layers=best_params['layers'],
+        lr=best_params['lr'],
+        dropout=best_params['dropout']
+    )
     # Train the model - this is very slow on lxplus
     history = model.fit(X_train, y_train, validation_split=0.2,
-                        epochs=epochs, batch_size=batchsize)
+                        epochs=best_params['epochs'], batch_size=best_params['batch_size'])
     model.save(args.model)
     # Plot loss function
     plot_history(history, 'huber_loss', args.out_dir)
+
+
 # Run performance plots, etc
 
 mjj_reg_corr_term = model.predict(df_test_in[input_vars])
 
+plot_mjj_distr(df_test, mjj_reg_corr_term, args.out_dir)
+
 feature_importance(model, input_vars, X_test, y_test,
                    tf.keras.losses.MeanSquaredError, args.out_dir)
-
-plot_mjj_distr(df_test, mjj_reg_corr_term, args.out_dir)
