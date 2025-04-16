@@ -19,6 +19,7 @@ def deltaPhi(phi1, phi2):
 
 
 def corrMET(MET_pt, MET_phi, sumET, jet_pt_old, jet_m_old, jet_pt_new, jet_m_new, jet_phi):
+    # Apply a type-1 MET correction with a corrected jet
     MET = vector.array({
         "rho": MET_pt,
         "phi": MET_phi
@@ -40,21 +41,24 @@ def corrMET(MET_pt, MET_phi, sumET, jet_pt_old, jet_m_old, jet_pt_new, jet_m_new
     MET_phi = np.where(jet_pt_old == -999, MET_phi, corr_MET["phi"])
     sumET = np.where(jet_pt_old == -999, sumET, corr_MET_sumET)
 
-    return MET_pt,MET_phi,sumET
+    return MET_pt, MET_phi, sumET
+
+
 def add_PNetCorrections(df, ANType):
     print("FIXME remove this")
 
     corr_MET_pt = df["puppiMET_pt"]
     corr_MET_phi = df["puppiMET_phi"]
     corr_MET_sumET = df["puppiMET_sumEt"]
-    jet_res_sum = np.zeros_like(df["puppiMET_pt"])
 
-#    jet_prefixes = [f"jet{i}" for i in range(1, 11)]
     jet_prefixes = [ANType + "_lead_bjet", ANType + "_sublead_bjet"]
     for jet_prefix in jet_prefixes:  # correct MET
-        pNetFactor = ((1-df[jet_prefix+"_rawFactor"]) * df[jet_prefix+"_PNetRegPtRawCorr"] * df[jet_prefix+"_PNetRegPtRawCorrNeutrino"])
-        old_pt = np.where(df[jet_prefix+"_pt"] == -999, df[jet_prefix+"_pt"], (df[jet_prefix+"_pt"] / pNetFactor))
-        corr_MET_pt,corr_MET_phi,corr_MET_sumET = corrMET(
+        pNetFactor = ((1-df[jet_prefix+"_rawFactor"]) * df[jet_prefix +
+                      "_PNetRegPtRawCorr"] * df[jet_prefix+"_PNetRegPtRawCorrNeutrino"])
+        old_pt = np.where(df[jet_prefix+"_pt"] == -999,
+                          df[jet_prefix+"_pt"], (df[jet_prefix+"_pt"] / pNetFactor))
+        # v3 parquets don't have original jet info so calculate it using pNET factor
+        corr_MET_pt, corr_MET_phi, corr_MET_sumET = corrMET(
             corr_MET_pt,
             corr_MET_phi,
             corr_MET_sumET,
@@ -64,16 +68,16 @@ def add_PNetCorrections(df, ANType):
             df[jet_prefix+"_mass"],
             df[jet_prefix+"_phi"])
 
-        
-    #    jet_res_sum = jet_res_sum + df[jet_prefix + "_PNetRegPtRawRes"]**2
     # add columns to df
 
-    #df["jet_res_sum"] = np.sqrt(jet_res_sum)
+    # df["jet_res_sum"] = np.sqrt(jet_res_sum)
     df[ANType + "_corr_MET_pt"] = corr_MET_pt
     df[ANType + "_corr_MET_phi"] = corr_MET_phi
     df[ANType + "_corr_MET_SumET"] = corr_MET_sumET
-    df[ANType + "_lead_bjet_rawpt"] = df[ANType + "_lead_bjet_pt"] * (1 - df[ANType + "_lead_bjet_rawFactor"])
-    df[ANType + "_sublead_bjet_rawpt"] = df[ANType + "_sublead_bjet_pt"] * (1 - df[ANType + "_sublead_bjet_rawFactor"])
+    df[ANType + "_lead_bjet_rawpt"] = df[ANType + "_lead_bjet_pt"] * \
+        (1 - df[ANType + "_lead_bjet_rawFactor"])
+    df[ANType + "_sublead_bjet_rawpt"] = df[ANType + "_sublead_bjet_pt"] * \
+        (1 - df[ANType + "_sublead_bjet_rawFactor"])
 
     # recalculate deltaPhi with new MET
 
@@ -122,7 +126,7 @@ def calc_var(df_in, input_var, ANType, year):
         return None
 
 
-def mjj_input_df(df_in, input_vars,ANType, year):
+def mjj_input_df(df_in, input_vars, ANType, year):
 
     df_out = pd.DataFrame([])
     extravars = pd.DataFrame([])

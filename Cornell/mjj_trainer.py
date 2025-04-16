@@ -1,5 +1,6 @@
 
 # Todo: cleanup imports
+import seaborn as sns
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import mean_squared_error, make_scorer
 import os
@@ -23,43 +24,9 @@ import argparse
 import json
 
 
-def gauss(x, *p):
-    A, mu, sigma = p
-    return A*np.exp(-(x-mu)**2/(2.*sigma**2))
-
-
-def novosibirsk(x, A, x0, sigma, tau):
-    """
-    Computes the Novosibirsk function.
-
-    Parameters:
-    x     : float or ndarray : Input value(s)
-    A     : float : Amplitude (scales the function)
-    x0    : float : Peak position
-    sigma : float : Width parameter (sigma, must be > 0)
-    tau   : float : Tail parameter (controls asymmetry)
-
-    Returns:
-    float or ndarray : Computed function values
-    """
-    if abs(tau) < 1e-7:  # If tau is very small, function reduces to a Gaussian
-        return A * np.exp(-0.5 * ((x - x0) / sigma) ** 2)
-
-    # Compute Lambda
-    ln4 = np.log(4)
-    lambda_ = np.sinh(tau * np.sqrt(ln4)) / (abs(sigma) * tau * np.sqrt(ln4))
-
-    # Compute the logarithmic term safely
-    arg = 1 + lambda_ * tau * (x - x0)
-    arg = np.clip(arg, 1e-10, None)  # Prevent log of zero/negative values
-    log_term = np.log(arg) / tau
-
-    return A * np.exp(-0.5 * (log_term ** 2))
-
-
 def double_crystal_ball(x, A, mean, sigma, alpha1, n1, alpha2, n2):
     """
-    Double-sided Crystal Ball function.
+    Double-sided Crystal Ball function, used for fitting mjj distributions
 
     Parameters:
     x      : float or ndarray : Input value(s)
@@ -122,6 +89,7 @@ def build_model(input_shape, X_train, optimizer='adam', N=200, activation='relu'
 
 def plot_input_vars(df, input_vars, save_location):
 
+    # plots of input vars before the normalization layer
     hep.style.use("CMS")
     fig, ax = plt.subplots()
     hep.cms.label("Preliminary", ax=ax, loc=0)
@@ -134,29 +102,34 @@ def plot_input_vars(df, input_vars, save_location):
         plt.xlabel(input_var)
         plt.savefig(save_location+"/input_vars/" + input_var+".png")
         plt.clf()
-import seaborn as sns
+
+
 def corr_matrix(df, save_location):
 
-# Compute correlation matrix
+    # Compute correlation matrix
     corr_matrix = df.corr()
 # Plot the correlation matrix
     new_names = []
     for i in df.columns.tolist():
-        i = (i.replace("Res_",""))
-        i = (i.replace("corr_MET","MET"))
-        new_names.append(i.replace("puppiMET","MET"))
+        i = (i.replace("Res_", ""))
+        i = (i.replace("corr_MET", "MET"))
+        new_names.append(i.replace("puppiMET", "MET"))
 
     plt.figure(figsize=(14, 14))
-    sns.heatmap(corr_matrix, annot=False, cmap='crest', fmt=".2f", linewidths=0.5)
+    sns.heatmap(corr_matrix, annot=False, cmap='crest',
+                fmt=".2f", linewidths=0.5)
     # Improve label readability
-    plt.xticks(ticks=np.arange(len(new_names)) + 0.5,rotation=90, ha='right', fontsize=15, labels = new_names)
-    plt.yticks(ticks=np.arange(len(new_names)) + 0.5,fontsize=15, labels = new_names)
+    plt.xticks(ticks=np.arange(len(new_names)) + 0.5, rotation=90,
+               ha='right', fontsize=15, labels=new_names)
+    plt.yticks(ticks=np.arange(len(new_names)) +
+               0.5, fontsize=15, labels=new_names)
 
-    #plt.title('Improved Correlation Matrix', fontsize=14)
+    # plt.title('Improved Correlation Matrix', fontsize=14)
     plt.tight_layout()  # Adjust layout for better spacing
     plt.savefig(save_location + "/corrmatrix.png")
 
-def plot_mjj_distr(df_in, corr_term, save_location, do_fits=True, METcut = 0):
+
+def plot_mjj_distr(df_in, corr_term, save_location, do_fits=True, METcut=0, plotPull=True):
     """
     plot_mjj_distr plots dijet mass distribution comparison
     compares raw HiggsDNA output, PNet regressed dijet and mjj regressor output
@@ -171,7 +144,7 @@ def plot_mjj_distr(df_in, corr_term, save_location, do_fits=True, METcut = 0):
     max_mjj = 190
     num_bins = 100
     colors = ['tab:blue', 'orange', 'green', 'purple']
-    #m_vars = ["Res_dijet_massPNetCorr","Res_gen_dijet_mass_neutrino"]
+    # m_vars = ["Res_dijet_massPNetCorr","Res_gen_dijet_mass_neutrino"]
     hep.style.use("CMS")
     fig, ax = plt.subplots()
     hep.cms.label("Preliminary", ax=ax, loc=0)
@@ -182,18 +155,16 @@ def plot_mjj_distr(df_in, corr_term, save_location, do_fits=True, METcut = 0):
     print(corr_term.shape)
     corr_term = corr_term.flatten()
     df["mjj_reg"] = (corr_term * df["Res_dijet_mass"]
-               ) + df["Res_dijet_mass"]
+                     ) + df["Res_dijet_mass"]
 
     if METcut == 1:
-        df = df[df["Res_corr_MET_pt"]>40]
+        df = df[df["Res_corr_MET_pt"] > 40]
     if METcut == 2:
-        df = df[df["Res_corr_MET_pt"]<40]
+        df = df[df["Res_corr_MET_pt"] < 40]
 
-    masses_dict = { 'PNet Reg.': df["Res_dijet_mass"],
-        'mjj Reg.': df["mjj_reg"],
-        #'test': df["Res_dijet_massPNetCorr"],
-#        'target' : df["Res_gen_dijet_mass_neutrino"]
-    }
+    masses_dict = {'PNet Reg.': df["Res_dijet_mass"],
+                   'mjj Reg.': df["mjj_reg"],
+                   }
     i = 0
     for key, distr in masses_dict.items():
         plt.hist(distr, bins=bins_hist, histtype='step',
@@ -212,7 +183,7 @@ def plot_mjj_distr(df_in, corr_term, save_location, do_fits=True, METcut = 0):
                 [np.inf, 160, 60, np.inf, np.inf, np.inf, np.inf]  # Upper bounds
             )
             coeff, var_matrix = curve_fit(
-                double_crystal_ball, bin_centres, hist, p0=p0, bounds = bounds)
+                double_crystal_ball, bin_centres, hist, p0=p0, bounds=bounds)
             print(coeff)
             hist_fit = double_crystal_ball(bin_centres, *coeff)
             plt.plot(bin_centres, hist_fit, color=colors[i], label='$\mu$ = ' + str(
@@ -224,33 +195,30 @@ def plot_mjj_distr(df_in, corr_term, save_location, do_fits=True, METcut = 0):
     plt.savefig(save_location+"/mjj_distribution"+str(METcut)+".png")
     plt.clf()
 
-    if True:
-#        df = df.drop(
-#            df[np.abs(df["Res_lead_bjet_genFlav"]) != 5].index)
-#        df = df.drop(
-#            df[np.abs(df["Res_sublead_bjet_genFlav"]) != 5].index)
+    if plotPull:
         df = df.drop(
             df[np.abs(df["Res_lead_bjet_genMatched"]) != 1].index)
         df = df.drop(
             df[np.abs(df["Res_sublead_bjet_genMatched"]) != 1].index)
-
         hep.style.use("CMS")
         fig, ax = plt.subplots()
         hep.cms.label("Preliminary", ax=ax, loc=0)
-        mjj_reco_over_gen = df["Res_dijet_mass"]/df["Res_gen_dijet_mass_neutrino"]
+        mjj_reco_over_gen = df["Res_dijet_mass"] / \
+            df["Res_gen_dijet_mass_neutrino"]
         mjj_reg_over_gen = df["mjj_reg"]/df["Res_gen_dijet_mass_neutrino"]
         mjj_over_gen = df["Res_dijet_mass"]/df["Res_gen_dijet_mass_neutrino"]
         mean_reco = str(np.mean(mjj_reco_over_gen))[:5]
         mean_reg = str(np.mean(mjj_reg_over_gen))[:5]
         std_reco = str(np.std(mjj_reco_over_gen))[:5]
         std_reg = str(np.std(mjj_reg_over_gen))[:5]
-        bins = np.linspace(0,2,num=50)
-        plt.hist([mjj_reco_over_gen,mjj_reg_over_gen],label = ["PNet Reg. \n $\mu$ = " + mean_reco + " $\sigma$ = "+ std_reco,"PNet Reg. + mjj Reg. \n $\mu$ = " + mean_reg + " $\sigma$ = "+ std_reg],histtype = 'step', density = True,bins = bins)
-        #plt.hist(mjj_over_gen, label = 'reco.', histtype = 'step', density = True)
+        bins = np.linspace(0, 2, num=50)
+        plt.hist([mjj_reco_over_gen, mjj_reg_over_gen], label=["PNet Reg. \n $\mu$ = " + mean_reco + " $\sigma$ = " + std_reco,
+                 "PNet Reg. + mjj Reg. \n $\mu$ = " + mean_reg + " $\sigma$ = " + std_reg], histtype='step', density=True, bins=bins)
         plt.xlabel("$M_{jj} / M_{jj}^{target}$")
         plt.legend()
         plt.savefig(save_location+"/mjj_ratio.png")
         plt.clf()
+
 
 def plot_history(history, loss, save_location):
     print(history.history.keys())
@@ -298,16 +266,16 @@ def feature_importance(model, training_vars, X_test, Y_test, metric, save_locati
     feature_names = training_vars
 
     # hep.style.use("CMS") FIXME this plot does not look good with default mplhep style
-    fig, ax = plt.subplots(figsize = (12,12))
+    fig, ax = plt.subplots(figsize=(12, 12))
     # hep.cms.label("Preliminary", ax=ax, loc=0)
     for i in range(len(feature_importance)):
-        if feature_importance[i]<0:
-            feature_importance[i]=0
+        if feature_importance[i] < 0:
+            feature_importance[i] = 0
     new_names = []
     for i in feature_names:
-        i = (i.replace("Res_",""))
-        i = (i.replace("corr_MET","MET"))
-        new_names.append(i.replace("puppiMET","MET"))
+        i = (i.replace("Res_", ""))
+        i = (i.replace("corr_MET", "MET"))
+        new_names.append(i.replace("puppiMET", "MET"))
     plt.barh(new_names, feature_importance,
              color="royalblue", edgecolor="black", alpha=0.75)
     plt.xlabel("Feature Importance Score", fontsize=14, fontweight="bold")
@@ -316,6 +284,7 @@ def feature_importance(model, training_vars, X_test, Y_test, metric, save_locati
     fig.subplots_adjust(left=0.5)
     plt.savefig(save_location + "/feature_importance.png")
     plt.clf()
+
 
 if __name__ == '__main__':
     # mjj_trainer processing begins here:
@@ -329,7 +298,7 @@ if __name__ == '__main__':
     parser.add_argument('--plotsOnly', default=False, action='store_true')
     parser.add_argument('--doGridSearch', default=False, action='store_true')
     parser.add_argument('--hParams', default='configs/hParams.json')
-    parser.add_argument('--year', default = 'all')
+    parser.add_argument('--year', default='all')
     args = parser.parse_args()
 
     doGridSearch = args.doGridSearch
@@ -345,32 +314,35 @@ if __name__ == '__main__':
 
     # Open training parquet
 
-    years = [ "2022preEE",
+    years = ["2022preEE",
              "2022postEE",
              "2023preBPix",
              "2023postBPix"
-            ]
+             ]
     i = 0
     df_list = []
 
-    for i, year in enumerate(years, start=1):  # start=1 ensures numbering starts from 1
+    # start=1 ensures numbering starts from 1
+    for i, year in enumerate(years, start=1):
         year_ = year.split("p")[0]
         year_int = int(year_) - 2022
         if (year_ == args.year) or (args.year == "all"):
             try:
-                df_year = utils.load_parquet_file(args.training_set + "/" + year + "/NOTAG_merged.parquet", loadAll=True)
+                df_year = utils.load_parquet_file(
+                    args.training_set + "/" + year + "/NOTAG_merged.parquet", loadAll=True)
                 df_year["year"] = year_int
                 df_list.append(df_year)  # Collect all DataFrames in a list
             except:
-                print("FILE " + args.training_set + "/" + year + "/NOTAG_merged.parquet is MISSING")
+                print("FILE " + args.training_set + "/" +
+                      year + "/NOTAG_merged.parquet is MISSING")
     if args.year != "all":
         input_vars.remove("year")
-    df = pd.concat(df_list, axis=0)  
-    df = utils.add_PNetCorrections(df,"Res") #FIXME no longer needed?
+    df = pd.concat(df_list, axis=0)
+    df = utils.add_PNetCorrections(df, "Res")  # FIXME no longer needed?
 
-    df_train, df_test = train_test_split(df, test_size=0.7, random_state = 123)
+    df_train, df_test = train_test_split(df, test_size=0.7, random_state=123)
     print("# of training events (Pre-cuts): " + str(len(df_train.index)))
-
+# either enforce gen-matched jets or gen-matched to b-jets
 #    df_train = df_train.drop(
 #        df_train[np.abs(df_train["Res_lead_bjet_genFlav"]) != 5].index)
 #    df_train = df_train.drop(
@@ -382,8 +354,10 @@ if __name__ == '__main__':
 
     print("# of training events (Post-cuts): " + str(len(df_train.index)))
 
-    df_train_in, extravars = utils.mjj_input_df(df_train, allvars, "Res",df_train["year"])
-    df_test_in, extravars = utils.mjj_input_df(df_test, allvars, "Res", df_train["year"])
+    df_train_in, extravars = utils.mjj_input_df(
+        df_train, allvars, "Res", df_train["year"])
+    df_test_in, extravars = utils.mjj_input_df(
+        df_test, allvars, "Res", df_train["year"])
 
     plot_input_vars(df_train_in, input_vars, args.out_dir)
 
@@ -408,8 +382,8 @@ if __name__ == '__main__':
             'optimizer': ['adam'],
             'N': [128, 256],
             'activation': ['relu'],
-            'layers': [1,2,3],
-            'batch_size': [16, 32 , 48],
+            'layers': [1, 2, 3],
+            'batch_size': [16, 32, 48],
             'epochs': [20, 30, 35],
             'dropout': [0, 0.1],
             'lr':  [0.00002, 0.00001]
@@ -433,7 +407,7 @@ if __name__ == '__main__':
         random_search = RandomizedSearchCV(
             estimator=keras_reg,
             param_distributions=param_dist,
-            n_iter=100,
+            n_iter=10,  # increase for more robust hparameter tuning
             cv=3,
             verbose=1,
             n_jobs=10
@@ -472,48 +446,29 @@ if __name__ == '__main__':
         y_train = df_train_in[target_var]
 
         early_stop = tf.keras.callbacks.EarlyStopping(
-          monitor='val_loss',
-          patience=5,
-          restore_best_weights=True
+            monitor='val_loss',
+            patience=5,
+            restore_best_weights=True
         )
 
         # Train the model - this is very slow on lxplus
         history = model.fit(X_train, y_train, validation_split=0.2,
-                            epochs=best_params['epochs'], batch_size=best_params['batch_size'], callbacks = [early_stop])
+                            epochs=best_params['epochs'], batch_size=best_params['batch_size'], callbacks=[early_stop])
         model.save(args.model)
         # Plot loss function
         plot_history(history, 'huber_loss', args.out_dir)
-
 
     # Run performance plots, etc
     corr_matrix(df_train_in[input_vars], args.out_dir)
 
     mjj_reg_corr_term = model.predict(df_test_in[input_vars])
-    mjj_reg_corr_term_train = model.predict(df_train_in[input_vars])
 
-    #plot_mjj_distr(df_train, mjj_reg_corr_term_train, args.out_dir)
-    plot_mjj_distr(df_test, mjj_reg_corr_term, args.out_dir,METcut = 1)
-    plot_mjj_distr(df_test, mjj_reg_corr_term, args.out_dir,METcut = 2)
+    # plot_mjj_distr for different MET cuts
+    plot_mjj_distr(df_test, mjj_reg_corr_term, args.out_dir, METcut=1)
+    plot_mjj_distr(df_test, mjj_reg_corr_term, args.out_dir, METcut=2)
     plot_mjj_distr(df_test, mjj_reg_corr_term, args.out_dir)
-
-    plt.hist(mjj_reg_corr_term)
-    plt.yscale('log')
-    plt.savefig(args.out_dir + "test.png")
-    plt.clf()
-    plt.hist(mjj_reg_corr_term)
-    plt.yscale('log')
-    plt.savefig(args.out_dir + "test2.png")
-    plt.clf()
-
 
     y_test = df_test_in[target_var]
 
-#    feature_importance(model, input_vars, X_test, y_test,
-#                       tf.keras.losses.MeanSquaredError, args.out_dir)
-#    if not os.path.exists(args.out_dir + "/train"):
-#        os.makedirs(args.out_dir + "/train")
-#    feature_importance(model, input_vars, X_train, y_train,
-#                       tf.keras.losses.MeanSquaredError, args.out_dir+"/train/")
-
-
-
+    feature_importance(model, input_vars, X_test, y_test,
+                       tf.keras.losses.MeanSquaredError, args.out_dir)
