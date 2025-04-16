@@ -1,0 +1,1 @@
+{"optimizer": "adam", "lr": 1e-05, "layers": 3, "epochs": 35, "dropout": 0.05, "batch_size": 32, "activation": "relu", "N": 200}

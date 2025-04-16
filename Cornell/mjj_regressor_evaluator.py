@@ -14,7 +14,7 @@ import json
 import argparse
 import utils
 import os
-
+from mjj_trainer import plot_input_vars
 from tensorflow.keras.models import load_model
 
 # outer-most directory containing merged parquets to apply mjj on
@@ -22,12 +22,13 @@ from tensorflow.keras.models import load_model
 
 parser = argparse.ArgumentParser(
     prog='ProgramName', description='placeholder', epilog='placeholder')
-parser.add_argument('--vars', default='configs/variables_Cornell_mjj.json')
+parser.add_argument('--vars', default='configs/variables_mjj_alljets.json')
 parser.add_argument('--output_location', default='mjj_regressor_output')
 parser.add_argument('--attach_inputs', default=False, action='store_true')
 parser.add_argument('--attach_pNet', default=False, action='store_true')
 parser.add_argument('--input_location', default='mjj_regressor_input')
-parser.add_argument('--model', default='Mjj_regressor_model')
+parser.add_argument('--model', default='mjj_model_2022_MET')
+parser.add_argument('--year', default='2022')
 
 args = parser.parse_args()
 preamble = args.input_location
@@ -37,8 +38,8 @@ if not os.path.exists(output):
 
 with open(args.vars, 'r') as file:
     data = json.load(file)
-input_vars = data["input_variables"]
 
+input_vars = data["input_variables"]
 print("Please verify regressor is trained with selected input variables: ")
 for input_var in input_vars:
     print(input_var)
@@ -47,20 +48,29 @@ print("# of variables: "+str(len(input_vars)))
 file_paths = []
 for subdir, dirs, files in os.walk(preamble):
     for file in files:
-        if ".parquet" not in file:
+#        if ("GG-Box-3Jets_MGG-80" not in subdir) and ("GluGlutoHHto2B2G_kl-1p00_kt-1p00_c2-0p0" not in subdir) :
+#            continue
+        if "merged.parquet" not in file:
             continue
-        # if not "merged" in file:
-        #    # does not work with merged parquets
-        #    continue
+        if "nominal" not in subdir:
+            continue
+        if args.year not in subdir:
+            continue
         file_path = os.path.join(subdir, file)
         file_paths.append(file_path)
 
-# load your Mjj regressor here
-model = load_model(args.model, custom_objects={
-                   'huber_loss': tf.keras.losses.Huber})
+#load your Mjj regressor here
+
+years = {"2022preEE" : 0,
+         "2022postEE" : 1,
+         "2023preBPix" : 2,
+         "2023postBPix" : 3
+        }
 
 # main evaluator loop
 for file_path in file_paths:
+    model = load_model(args.model, custom_objects={
+                   'huber_loss': tf.keras.losses.Huber})
 
     print("Loading file: " + file_path)
     # load parquet with all variables
@@ -70,12 +80,14 @@ for file_path in file_paths:
     batches = pqfile.iter_batches(batch_size=chunk_size)
     schema = pq.read_schema(file_path)
     writer = None
-
+    for year in years:
+        if year in file_path:
+            sample_year = years[year]
     destination_path = output + file_path.replace(preamble, "")
     file_name = destination_path.split("/")[-1]
     destination_dir = destination_path.replace(file_name, "")
     new_file_name = file_name.split(
-        ".")[0] + "_mbb_reg" + "." + file_name.split(".")[1]
+        ".")[0] + "_mbb_reg_noMetCorr" + "." + file_name.split(".")[1]
     if not os.path.exists(destination_dir):
         os.makedirs(destination_dir)
     output_file = destination_dir + new_file_name
@@ -86,32 +98,52 @@ for file_path in file_paths:
         print("Processing chunk: " + str(chunknum))
         original_columns = df_chunk.columns
         # add PNET variables (unnecessary and to be removed in future)
-        df_chunk = utils.add_PNetCorrections(df_chunk)
+        for ANType in ["Res","nonRes"]:
+            new_vars = []
+            for var in input_vars:
+                var = var.replace("Res_", ANType+"_", 1)
+                new_vars.append(var)
+            df_chunk = utils.add_PNetCorrections(df_chunk, ANType)
+            print(sample_year)
+            new_vars.remove("year")
+            df_input, extravars = utils.mjj_input_df(df_chunk, new_vars, ANType, sample_year)
 
-        df_input, extravars = utils.mjj_input_df(df_chunk, input_vars)
-
-        if args.attach_inputs:
-            # attach input variables, only necessary for mbb_regressor studies
-            df_chunk = pd.concat([df_chunk, extravars], axis=1)
-        correction_term_pred = model.predict(df_input)
-        if not args.attach_pNet:  # attach PNET corrections to parquet, unnecessary in latest parquets
-            df_chunk = df_chunk[original_columns]
-        df_chunk["mjj_regressor_correction"] = correction_term_pred
-        df_chunk["mjj_regressed"] = (df_chunk["mjj_regressor_correction"] *
-                                     df_chunk["nonRes_dijet_mass_PNet_all"]) + df_chunk["nonRes_dijet_mass_PNet_all"]
-
+            #plot_input_vars(df_input, new_vars, "/afs/cern.ch/user/j/jafan/www/hhbbggplots/testdir/" + ANType +"/")
+            if args.attach_inputs:
+                df_chunk = pd.concat([df_chunk, extravars], axis=1)
+            correction_term_pred = model.predict(df_input)
+            if not args.attach_pNet:  # attach PNET corrections to parquet, unnecessary in latest parquets
+                if ANType == "Res":
+                  df_chunk = df_chunk[original_columns]
+                else:
+                  mod_columns = list(original_columns)
+                  mod_columns.append("Res_mjj_regressor_correction")
+                  mod_columns.append("Res_mjj_regressed")
+                  df_chunk = df_chunk[mod_columns]
+            df_chunk[ANType + "_mjj_regressor_correction"] = correction_term_pred
+            df_chunk[ANType + "_mjj_regressed"] = (df_chunk[ANType + "_mjj_regressor_correction"] *
+                                         df_chunk[ANType + "_dijet_mass"]) + df_chunk[ANType + "_dijet_mass"]
         # check for placeholder values, and insert in new columns (all new columns require a valid sublead jet)
-        df_is_not_placeholder = df_chunk["nonRes_sublead_bjet_phi"] > -999
-        for column in df_chunk.columns:
-            if column not in original_columns:
-                df_chunk[column] = np.where(
-                    df_is_not_placeholder, df_chunk[column], -999)
+        for ANType in ["Res","nonRes"]:
+            df_is_not_placeholder = df_chunk[ANType + "_sublead_bjet_phi"] > -999
+            for column in df_chunk.columns:
+                if ANType not in column:
+                    continue
+                if column not in original_columns:
+                    df_chunk[column] = np.where(
+                        df_is_not_placeholder, df_chunk[column], -999)
 
         table = pa.Table.from_pandas(df_chunk)
         if writer is None:
-            schema = schema.append(
-                pa.field('mjj_regressor_correction', pa.float32()))
-            schema = schema.append(pa.field('mjj_regressed', pa.float64()))
+            schema = schema.append(pa.field('Res_mjj_regressor_correction', pa.float32()))
+            schema = schema.append(pa.field('Res_mjj_regressed', pa.float64()))
+            schema = schema.append(pa.field('nonRes_mjj_regressor_correction', pa.float32()))
+            schema = schema.append(pa.field('nonRes_mjj_regressed', pa.float64()))
+            for field in schema:
+                if field.name == "__index_level_0__":
+                    fields_to_keep = [field_ for field_ in schema if field_.name != "__index_level_0__"]
+                    schema = pa.schema(fields_to_keep)
+                    schema = schema.append(pa.field('__index_level_0__', pa.int64()))
             writer = pq.ParquetWriter(output_file, schema)
         table = table.cast(schema)
         writer.write_table(table)

@@ -1,0 +1,23 @@
+{
+    "input_variables" : [
+        "puppiMET_pt_over_mjj",
+        "puppiMET_sumEt_over_mjj",
+        "puppiMET_phi",
+        "Res_lead_bjet_pt_over_mjj",
+        "Res_lead_bjet_mass_over_mjj",
+        "Res_lead_bjet_eta_sign",
+        "Res_lead_bjet_phi",
+        "Res_lead_bjet_btagPNetB",
+        "Res_sublead_bjet_pt_over_mjj",
+        "Res_sublead_bjet_mass_over_mjj",
+        "Res_sublead_bjet_eta_sign",
+        "Res_sublead_bjet_phi",
+        "Res_sublead_bjet_btagPNetB",
+        "Res_lead_bjet_PNetRegPtRawRes",
+        "Res_sublead_bjet_PNetRegPtRawRes",
+        "projectphi2M",
+        "projectphi1M",
+        "year"
+],
+    "target" : "Mjj_Corr_Ratio"
+}
