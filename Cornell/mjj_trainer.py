@@ -144,7 +144,6 @@ def plot_mjj_distr(df_in, corr_term, save_location, do_fits=True, METcut=0, plot
     max_mjj = 190
     num_bins = 100
     colors = ['tab:blue', 'orange', 'green', 'purple']
-    # m_vars = ["Res_dijet_massPNetCorr","Res_gen_dijet_mass_neutrino"]
     hep.style.use("CMS")
     fig, ax = plt.subplots()
     hep.cms.label("Preliminary", ax=ax, loc=0)
